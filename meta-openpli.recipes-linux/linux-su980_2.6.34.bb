@@ -22,7 +22,7 @@ SRC_URI = " \
 	file://defconfig \
 	"
 
-S = "${WORKDIR}/linux-${PV}"
+S = "${WORKDIR}/linux-${PV}${PATCHLEVEL}"
 
 inherit kernel
 
