@@ -34,22 +34,13 @@ KERNEL_IMAGEDEST = "/tmp"
 
 FILES_kernel-image = "${KERNEL_IMAGEDEST}/${KERNEL_IMAGETYPE}-${KERNEL_VERSION}"
 
-addtask munge before do_patch after do_unpack
-
-do_munge () {
-	if [ ${PATCHLEVEL} != "" ]; then
-		mv ${S}${PATCHLEVEL} ${S};
-	fi;
-}
-
 do_configure_prepend() {
         oe_machinstall -m 0644 ${WORKDIR}/defconfig ${S}/.config
         oe_runmake oldconfig
 }
 
 do_install_append () {
-	install -d ${D}/boot
-	install -m 0755 vmlinux ${DEPLOYDIR}/vmlinux.bin
+	install -m 0644 vmlinux ${DEPLOY_DIR_IMAGE}/vmlinux-${MACHINE}.bin
 }
 
 pkg_preinst_kernel-image () {
