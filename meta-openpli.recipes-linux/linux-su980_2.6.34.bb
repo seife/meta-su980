@@ -32,33 +32,9 @@ KERNEL_OUTPUT = "vmlinux"
 KERNEL_IMAGETYPE = "vmlinux"
 KERNEL_IMAGEDEST = "/tmp"
 
-FILES_kernel-image = "${KERNEL_IMAGEDEST}/${KERNEL_IMAGETYPE}-${KERNEL_VERSION}"
+FILES_kernel-image = "${KERNEL_IMAGEDEST}/${KERNEL_IMAGETYPE}-${KERNEL_VERSION}*"
 
 do_configure_prepend() {
         oe_machinstall -m 0644 ${WORKDIR}/defconfig ${S}/.config
         oe_runmake oldconfig
-}
-
-do_install_append () {
-	install -m 0644 vmlinux ${DEPLOY_DIR_IMAGE}/vmlinux-${MACHINE}.bin
-}
-
-pkg_preinst_kernel-image () {
-	[ -d /proc/stb ] && mount -t jffs2 mtd:'boot partition' /boot
-	true
-}
-
-pkg_postinst_kernel-image () {
-	[ -d /proc/stb ] && umount /boot
-	true
-}
-
-pkg_prerm_kernel-image () {
-	[ -d /proc/stb ] && mount -t jffs2 mtd:'boot partition' /boot
-	true
-}
-
-pkg_postrm_kernel-image () {
-	[ -d /proc/stb ] && umount /boot
-	true
 }
