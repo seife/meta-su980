@@ -1,0 +1,12 @@
+diff -Naur linux-2.6.34/arch/arm/mach-apollo/nand.c linux-2.6.34_stb388/arch/arm/mach-apollo/nand.c
+--- linux-2.6.34/arch/arm/mach-apollo/nand.c	2011-02-18 14:40:41.000000000 +0800
++++ linux-2.6.34_stb388/arch/arm/mach-apollo/nand.c	2011-02-18 14:37:00.000000000 +0800
+@@ -37,7 +37,7 @@
+ 
+ static int __init apollo_nand_init(void)
+ {
+-#if 1
++#if 0
+ 	/**
+ 	 * FIXME: This configuration must come from bootloader
+ 	 **/

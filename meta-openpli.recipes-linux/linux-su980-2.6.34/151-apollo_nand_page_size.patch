@@ -1,0 +1,12 @@
+--- linux-2.6.34.orig/drivers/mtd/nand/nand_base.c	2011-02-15 17:46:24.000000000 +0800
++++ linux-2.6.34/drivers/mtd/nand/nand_base.c	2011-02-15 17:49:44.000000000 +0800
+@@ -2717,6 +2717,9 @@
+ 		extid >>= 2;
+ 		/* Get buswidth information */
+ 		busw = (extid & 0x01) ? NAND_BUSWIDTH_16 : 0;
++		
++		type->pagesize = mtd->writesize;
++		
+ 
+ 	} else {
+ 		/*

@@ -1,0 +1,502 @@
+diff -Nrua linux-2.6.34.orig/drivers/mtd/Kconfig linux-2.6.34/drivers/mtd/Kconfig
+--- linux-2.6.34.orig/drivers/mtd/Kconfig	2011-01-13 16:44:00.000000000 +0800
++++ linux-2.6.34/drivers/mtd/Kconfig	2011-01-13 16:48:21.000000000 +0800
+@@ -226,6 +226,15 @@
+ 	  You do not need this option for use with the DiskOnChip devices. For
+ 	  those, enable NFTL support (CONFIG_NFTL) instead.
+ 
++config MTD_BLOCK_ROBBS
++	tristate "Readonly block device access to MTD devices with bad block skipping"
++	depends on MTD_BLOCK_RO!=y && BLOCK
++	select MTD_BLKDEVS
++	help
++	  This provides a simple "bad block skipping" (ie readonly) NAND Flash
++	  Translation Layer, which allows bad block unaware readonly filesystems
++	  (such as cramfs) to run from NAND MTD devices.
++
+ config FTL
+ 	tristate "FTL (Flash Translation Layer) support"
+ 	depends on BLOCK
+diff -Nrua linux-2.6.34.orig/drivers/mtd/Makefile linux-2.6.34/drivers/mtd/Makefile
+--- linux-2.6.34.orig/drivers/mtd/Makefile	2011-01-13 16:44:00.000000000 +0800
++++ linux-2.6.34/drivers/mtd/Makefile	2011-01-13 16:49:45.000000000 +0800
+@@ -19,6 +19,7 @@
+ obj-$(CONFIG_MTD_BLKDEVS)	+= mtd_blkdevs.o
+ obj-$(CONFIG_MTD_BLOCK)		+= mtdblock.o
+ obj-$(CONFIG_MTD_BLOCK_RO)	+= mtdblock_ro.o
++obj-$(CONFIG_MTD_BLOCK_ROBBS)	+= mtdblock_robbs.o
+ obj-$(CONFIG_FTL)		+= ftl.o
+ obj-$(CONFIG_NFTL)		+= nftl.o
+ obj-$(CONFIG_INFTL)		+= inftl.o
+diff -Nrua linux-2.6.34.orig/drivers/mtd/mtdblock_robbs.c linux-2.6.34/drivers/mtd/mtdblock_robbs.c
+--- linux-2.6.34.orig/drivers/mtd/mtdblock_robbs.c	1970-01-01 08:00:00.000000000 +0800
++++ linux-2.6.34/drivers/mtd/mtdblock_robbs.c	2011-01-13 16:47:09.000000000 +0800
+@@ -0,0 +1,468 @@
++/*
++ * Direct MTD block device access, readonly with NAND bad block skipping
++ *
++ * (C) 2007-2009 Andre McCurdy, NXP Semiconductors
++ * (C) 2000-2003 Nicolas Pitre <nico@cam.org>
++ * (C) 1999-2003 David Woodhouse <dwmw2@infradead.org>
++ */
++
++#include <linux/fs.h>
++#include <linux/init.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/sched.h>
++#include <linux/slab.h>
++#include <linux/types.h>
++#include <linux/vmalloc.h>
++
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/blktrans.h>
++#include <linux/mutex.h>
++
++//#include <linux/nxp_sha.h>
++
++#if defined (CONFIG_PNX8335_AES)
++#include <linux/pnx8335_aes.h>
++#endif
++
++#define DEV_BLOCKSIZE		(512)			/* fixed by MTD block driver infrastructure */
++#define CACHE_SIZE		(4 * 1024)		/* must be a multiple of DEV_BLOCKSIZE and a fraction of NAND erase block size */
++#define CACHE_BASE_INVALID	((unsigned long) -1)
++
++/*
++   Pick a major device number to 'borrow'... whichever one we pick, the
++   driver which really owns that number MUST NOT ALSO BE INCLUDE IN THE KERNEL !!
++
++   31 : The offical mtdblock major number. Picking this allows the driver to be
++	tested as a drop in (readonly) replacement for the normal mtdblock driver.
++
++   44 : The mtd 'ftl.c' major number. Note that the bootloader, fstab, etc,
++	etc may need tweaking to use an unexpected device...
++*/
++
++#if 0
++#define ROBBS_NAME	"mtdblock"
++#define ROBBS_MAJOR	31
++#else
++#define ROBBS_NAME	"mtdblock_robbs"
++#define ROBBS_MAJOR	44
++#endif
++
++#define IMG_MAGIC                       0x41676d69
++#define IMG_MAGIC2                      0x43634d52
++
++#define IMG_TYPE_INITFS_CRAMFS          (0x0A)
++#define IMG_TYPE_INITFS_SQUASHFS        (0x1B)
++
++#define IMG_FLAG_PREPEND                (1 << 0)
++#define IMG_FLAG_ENCMODE_NONE           (0 << 6)
++#define IMG_FLAG_ENCMODE_CBC_ONEPASS    (1 << 6)
++#define IMG_FLAG_ENCMODE_CBC_4KBLOCKS   (2 << 6)
++#define IMG_FLAG_ENCMODE_CTR            (3 << 6)
++#define IMG_FLAG_ENCMODE_MASK           (7 << 6)
++
++typedef struct
++{
++	unsigned int _d0[2];
++	unsigned int magic;
++	unsigned int magic2;
++	unsigned int _d1[2];
++	unsigned int type;
++	unsigned int _d2[2];
++	unsigned int data_start_offset;
++	unsigned int _d3[2];
++	unsigned int flags;
++	unsigned int _d4[47];
++	unsigned int iv[4];
++}
++aimage_header_t;
++
++static struct mtdblk_dev {
++	int count;
++	struct mtd_info *mtd;
++	unsigned int bblist_count;
++	unsigned long *bblist_data;
++	unsigned long cache_base;
++	unsigned long lba_offset;
++	unsigned int hcb_count; 		/* hashed cache blocks count */
++	unsigned char *hcb_hdata;		/* hashed cache blocks hashdata */
++	struct mutex cache_mutex;
++#if defined (CONFIG_PNX8335_AES)
++	int encrypted;
++	unsigned char aeskey[16];
++	unsigned char iv[16];
++#endif
++	unsigned char cache_buffer[CACHE_SIZE];
++}
++*mtdblks[MAX_MTD_DEVICES];
++
++static int mtdblock_robbs_cache_load (struct mtdblk_dev *mtdblk, unsigned long pos_phys, unsigned long pos_virt)
++{
++	struct mtd_info *mtd = mtdblk->mtd;
++//	unsigned char *hash_expected = NULL;
++	unsigned int cb;
++	size_t retlen;
++	int ret;
++
++	if (pos_phys & (CACHE_SIZE - 1)) {
++//		printk ("%s: %s: pos_phys 0x%08lx, not CACHE_SIZE aligned ?!?\n", __FUNCTION__, mtd->name, pos_phys);
++		return -EIO;
++	}
++
++	mutex_lock (&mtdblk->cache_mutex);
++
++	if (mtdblk->hcb_count) {
++		cb = pos_virt / CACHE_SIZE;
++		if (cb >= mtdblk->hcb_count) {
++//			printk ("%s: %s: cacheblock (%d) out of range (hcb_count == %d)\n", __FUNCTION__, mtd->name, cb, mtdblk->hcb_count);
++			ret = -EIO;
++			goto done;
++		}
++//		hash_expected = mtdblk->hcb_hdata + (cb * SHA_DIGEST_LENGTH);
++	}
++
++	/*
++	   Fixme: is mtd->read() error handling of ret and retlen correct ??
++	*/
++	ret = mtd->read (mtd, pos_phys, CACHE_SIZE, &retlen, mtdblk->cache_buffer);
++
++	if (unlikely(ret == -EUCLEAN)) {
++		printk ("%s: %s: pos_phys 0x%08lx, correctable ECC error\n", __FUNCTION__, mtd->name, pos_phys);
++		ret = 0;
++	}
++
++	if (ret == 0)
++		mtdblk->cache_base = (retlen == CACHE_SIZE) ? pos_phys : CACHE_BASE_INVALID;
++#if 0
++	if (hash_expected) {
++		NXP_SHA_CTX ctx;
++		unsigned char hash_actual[SHA_DIGEST_LENGTH];
++
++		nxp_SHA1_Init (&ctx);
++		nxp_SHA1_Update (&ctx, mtdblk->cache_buffer, CACHE_SIZE);
++		nxp_SHA1_Final (hash_actual, &ctx);
++
++		if (memcmp (hash_actual, hash_expected, SHA_DIGEST_LENGTH) != 0) {
++//			printk ("%s: %s: pos_virt 0x%08lx, hash check failure\n", __FUNCTION__, mtd->name, pos_virt);
++			ret = -EIO;
++			goto done;
++		}
++	}
++	
++#endif
++
++#if defined (CONFIG_PNX8335_AES)
++	if ((mtdblk->cache_base != CACHE_BASE_INVALID) && (mtdblk->encrypted)) {
++		struct aes_op op;
++		unsigned int enc_start_block;
++		unsigned int data_start_offset = mtdblk->lba_offset * DEV_BLOCKSIZE;
++
++//		printk ("%s: %s: pos_virt 0x%08lx, data_start_offset 0x%08x\n", __FUNCTION__, mtd->name, pos_virt, data_start_offset);
++
++		if ((pos_virt == 0) && (data_start_offset == 0)) {
++			enc_start_block = (pos_virt + sizeof(aimage_header_t)) / 16;
++			op.src = mtdblk->cache_buffer + sizeof(aimage_header_t);
++			op.blocks = (sizeof(mtdblk->cache_buffer) - sizeof(aimage_header_t)) / 16;
++		}
++		else {
++			enc_start_block = (pos_virt - data_start_offset) / 16;
++			op.src = mtdblk->cache_buffer;
++			op.blocks = sizeof(mtdblk->cache_buffer) / 16;
++		}
++
++		op.dst = op.src;
++		op.cmd = AESCMD_DECRYPT_CBC_KEY_USER;
++		memcpy (op.key, mtdblk->aeskey, 16);
++		memcpy (op.iv, mtdblk->iv, 12);
++		op.iv[12] = (enc_start_block >> 24) & 0xFF;
++		op.iv[13] = (enc_start_block >> 16) & 0xFF;
++		op.iv[14] = (enc_start_block >> 8) & 0xFF;
++		op.iv[15] = (enc_start_block >> 0) & 0xFF;
++		if (aes_process_op_in_kernel (&op) != 0)
++			printk ("aes operation failed !!\n");
++	}
++#endif
++
++done:
++	mutex_unlock (&mtdblk->cache_mutex);
++
++	if (ret)
++		return ret;
++	if (retlen != CACHE_SIZE)
++		return -EIO;
++
++	return 0;
++}
++
++static int mtdblock_robbs_readsect (struct mtd_blktrans_dev *dev, unsigned long lba, char *buf)
++{
++	struct mtdblk_dev *mtdblk = mtdblks[dev->devnum];
++	struct mtd_info *mtd = mtdblk->mtd;
++	unsigned long pos_abs = (lba + mtdblk->lba_offset) * DEV_BLOCKSIZE;
++	unsigned long pos_base = (pos_abs / CACHE_SIZE) * CACHE_SIZE;
++	unsigned long pos_offset = pos_abs - pos_base;
++	unsigned long pos_base_original = pos_base;
++	int result;
++	int i;
++
++//	printk ("%s: %s at 0x%08lx (0x%08lx + %4ld)\n", __FUNCTION__, mtd->name, pos_abs, pos_base, pos_offset);
++
++	for (i = 0; i < mtdblk->bblist_count; i++) {
++		if (pos_base < mtdblk->bblist_data[i])
++			break;
++		pos_base += CACHE_SIZE;
++	}
++#if 0
++	if ((pos_base != pos_base_original) && (pos_offset == 0))
++		printk ("%s: %s (0x%08lx + %4ld) slipped to (0x%08lx + %4ld)\n",
++			__FUNCTION__, mtd->name, pos_base_original, pos_offset,
++			pos_base, pos_offset);
++#endif
++
++	if (pos_base >= mtd->size) {
++#if 0
++		printk ("%s: %s 0x%08lx slipped out of range (0x%08x)\n",
++			__FUNCTION__, mtd->name, pos_abs, mtd->size);
++#endif
++		memset (buf, 0xFF, DEV_BLOCKSIZE);
++		return 0;
++	}
++
++	if (pos_base != mtdblk->cache_base)
++		if ((result = mtdblock_robbs_cache_load (mtdblk, pos_base, pos_base_original)) != 0)
++			return result;
++
++	memcpy (buf, mtdblk->cache_buffer + pos_offset, DEV_BLOCKSIZE);
++	return 0;
++}
++
++static int mtdblock_robbs_open (struct mtd_blktrans_dev *mbd)
++{
++	unsigned char sector_buf[DEV_BLOCKSIZE];
++
++	int dev = mbd->devnum;
++	struct mtdblk_dev *mtdblk;
++	struct mtd_info *mtd = mbd->mtd;
++	aimage_header_t *header;
++	unsigned long pos;
++	unsigned int count;
++	int ret;
++
++	/*
++	   Fixme: does mtdblock core code provide locking around calls to open
++	   and release ?!? If not, things look broken for SMP or preempt...
++	*/
++
++	if (mtdblks[dev]) {
++		mtdblk = mtdblks[dev];
++		printk ("%s: %s, count %d -> %d\n", __FUNCTION__, mtd->name,
++			mtdblk->count, mtdblk->count + 1);
++		mtdblks[dev]->count++;
++		return 0;
++	}
++
++	printk ("%s: %s\n", __FUNCTION__, mtd->name);
++
++	mtdblk = kmalloc (sizeof(struct mtdblk_dev), GFP_KERNEL);
++	if (! mtdblk)
++		return -ENOMEM;
++
++	memset (mtdblk, 0, sizeof(struct mtdblk_dev));
++	mtdblk->count = 1;
++	mtdblk->mtd = mtd;
++
++	/*
++	   Don't handle multiple eraseblock sizes here (ie mtd->numeraseregions > 1).
++	   Assume that only happens with NOR, in which case mtd->block_isbad will be
++	   NULL...
++	*/
++	if (mtd->block_isbad)
++		mtdblk->bblist_count = mtd->ecc_stats.badblocks * (mtd->erasesize / CACHE_SIZE);
++	else
++		mtdblk->bblist_count = 0;
++
++#if 1
++	/*
++	   Temp debug + consistency check...
++	*/
++	count = 0;
++	if (mtd->block_isbad) {
++		for (pos = 0; pos < mtd->size; pos += CACHE_SIZE) {
++			if (mtd->block_isbad (mtd, pos)) {
++				count++;
++//				printk ("%s: badpos: 0x%08lx (%d)\n",
++//					__FUNCTION__, pos, count);
++			}
++		}
++	}
++	if (count != mtdblk->bblist_count)
++		printk ("\n%s: count (%d) != mtdblk->bblist_count (%d) !!\n\n",
++			__FUNCTION__, count, mtdblk->bblist_count);
++
++#endif
++
++	if (mtdblk->bblist_count != 0) {
++		mtdblk->bblist_data = kmalloc (mtdblk->bblist_count * sizeof (*mtdblk->bblist_data), GFP_KERNEL);
++		if (! mtdblk->bblist_data) {
++			kfree (mtdblk);
++			return -ENOMEM;
++		}
++		count = 0;
++		for (pos = 0; pos < mtd->size; pos += CACHE_SIZE) {
++			if (mtd->block_isbad (mtd, pos)) {
++				count++;
++//				printk ("%s: badpos: 0x%08lx (count %d)\n", __FUNCTION__, pos, count);
++				if (count > mtdblk->bblist_count) {
++					printk ("%s: increase in bad block count since first pass !?!\n", __FUNCTION__);
++					break;
++				}
++				mtdblk->bblist_data[count - 1] = pos;
++			}
++		}
++	}
++
++	mtdblk->lba_offset = 0;
++	mtdblk->hcb_count = 0;
++	mtdblk->hcb_hdata = NULL;
++
++	mtdblk->cache_base = CACHE_BASE_INVALID;
++	mutex_init (&mtdblk->cache_mutex);
++	mtdblks[dev] = mtdblk;
++
++	if ((ret = mtdblock_robbs_readsect (mbd, 0, sector_buf)) != 0) {
++		printk ("%s: %s: unable to read from device\n", __FUNCTION__, mtd->name);
++		mtdblks[dev] = NULL;
++		kfree (mtdblk->hcb_hdata);
++		kfree (mtdblk->bblist_data);
++		kfree (mtdblk);
++		return ret;
++	}
++
++	header = (aimage_header_t *) sector_buf;
++
++	if ((le32_to_cpu (header->magic) == IMG_MAGIC) &&
++	    (le32_to_cpu (header->magic2) == IMG_MAGIC2) &&
++	    (le32_to_cpu (header->flags) & IMG_FLAG_PREPEND))
++	{
++		unsigned int data_start_offset = le32_to_cpu (header->data_start_offset);
++
++		if ((data_start_offset % DEV_BLOCKSIZE) == 0) {
++			mtdblk->lba_offset = data_start_offset / DEV_BLOCKSIZE;
++			printk ("%s: %s: lba_offset %ld\n", __FUNCTION__, mtd->name, mtdblk->lba_offset);
++		}
++		else {
++			printk ("%s: %s: data_start_offset (%d) not a multiple of %d !?!\n",
++				__FUNCTION__, mtd->name, data_start_offset, DEV_BLOCKSIZE);
++		}
++	}
++
++#if defined (CONFIG_PNX8335_AES)
++	if ((le32_to_cpu (header->magic) == IMG_MAGIC) &&
++	    (le32_to_cpu (header->magic2) == IMG_MAGIC2) &&
++	    ((le32_to_cpu (header->type) == IMG_TYPE_INITFS_CRAMFS) ||
++	     (le32_to_cpu (header->type) == IMG_TYPE_INITFS_SQUASHFS)) &&
++	    ((le32_to_cpu (header->flags) & IMG_FLAG_ENCMODE_MASK) == IMG_FLAG_ENCMODE_CBC_4KBLOCKS))
++	{
++		unsigned char stb225_default_aes_key[16] =
++		{
++			0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F
++		};
++
++		memcpy (mtdblk->aeskey, stb225_default_aes_key, 16);
++		memcpy (mtdblk->iv, header->iv, 16);
++		mtdblk->encrypted = 1;
++		mtdblk->cache_base = CACHE_BASE_INVALID;
++		printk ("%s: Encrypted FS detected, iv[16] : %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x\n", __FUNCTION__,
++			mtdblk->iv[0], mtdblk->iv[1], mtdblk->iv[ 2], mtdblk->iv[ 3], mtdblk->iv[ 4], mtdblk->iv[ 5], mtdblk->iv[ 6], mtdblk->iv[ 7],
++			mtdblk->iv[8], mtdblk->iv[9], mtdblk->iv[10], mtdblk->iv[11], mtdblk->iv[12], mtdblk->iv[13], mtdblk->iv[14], mtdblk->iv[15]);
++	}
++#endif
++
++	return 0;
++}
++
++static int mtdblock_robbs_release (struct mtd_blktrans_dev *mbd)
++{
++	int dev = mbd->devnum;
++	struct mtdblk_dev *mtdblk = mtdblks[dev];
++	struct mtd_info *mtd = mtdblk->mtd;
++
++	printk ("%s: %s, count %d -> %d\n", __FUNCTION__, mtd->name,
++		mtdblk->count, mtdblk->count - 1);
++
++	mtdblk->count--;
++
++#if 0
++	/*
++	   Freeing here means we have to ditch hcb_hdata and bblist_data, which
++	   are awkward and/or slow to re-acquire if the device is opened again.
++	   Make them persistent instead.
++	*/
++	if (mtdblk->count == 0) {
++		mtdblks[dev] = NULL;
++		kfree (mtdblk->hcb_hdata);
++		kfree (mtdblk->bblist_data);
++		kfree (mtdblk);
++	}
++#endif
++
++	return 0;
++}
++
++static void mtdblock_robbs_add_mtd (struct mtd_blktrans_ops *tr, struct mtd_info *mtd)
++{
++	struct mtd_blktrans_dev *dev = kmalloc (sizeof(*dev), GFP_KERNEL);
++
++	if (! dev)
++		return;
++
++	memset (dev, 0, sizeof(*dev));
++
++	dev->mtd = mtd;
++	dev->devnum = mtd->index;
++	dev->size = mtd->size / DEV_BLOCKSIZE;
++	dev->tr = tr;
++	dev->readonly = 1;
++
++	add_mtd_blktrans_dev (dev);
++}
++
++static void mtdblock_robbs_remove_dev (struct mtd_blktrans_dev *dev)
++{
++	/*
++	   Fixme: also need to free contents of mtdblks array !!
++	*/
++	del_mtd_blktrans_dev (dev);
++	kfree (dev);
++}
++
++static struct mtd_blktrans_ops mtdblock_robbs_tr =
++{
++	.name		= ROBBS_NAME,
++	.major		= ROBBS_MAJOR,
++	.part_bits	= 0,
++	.blksize 	= 512,
++	.open		= mtdblock_robbs_open,
++//	.flush		= mtdblock_robbs_flush,
++	.release	= mtdblock_robbs_release,
++	.readsect	= mtdblock_robbs_readsect,
++	.add_mtd	= mtdblock_robbs_add_mtd,
++	.remove_dev	= mtdblock_robbs_remove_dev,
++	.owner		= THIS_MODULE,
++};
++
++static int __init init_mtdblock_robbs (void)
++{
++	return register_mtd_blktrans (&mtdblock_robbs_tr);
++}
++
++static void __exit cleanup_mtdblock_robbs (void)
++{
++	deregister_mtd_blktrans (&mtdblock_robbs_tr);
++}
++
++module_init(init_mtdblock_robbs);
++module_exit(cleanup_mtdblock_robbs);
++
++MODULE_LICENSE("GPL");
++

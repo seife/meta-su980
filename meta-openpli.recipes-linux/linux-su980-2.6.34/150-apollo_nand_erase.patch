@@ -1,0 +1,58 @@
+--- linux-2.6.34.orig/drivers/mtd/nand/nand_bbt.c	2011-01-16 11:29:20.000000000 +0800
++++ linux-2.6.34/drivers/mtd/nand/nand_bbt.c	2011-01-16 11:04:24.000000000 +0800
+@@ -326,18 +326,18 @@
+  * Scan a given block partially
+  */
+ static int scan_block_fast(struct mtd_info *mtd, struct nand_bbt_descr *bd,
+-			   loff_t offs, uint8_t *buf, int len)
+-{
++			   loff_t offs, uint8_t *buf, int len) {
+ 	struct mtd_oob_ops ops;
+ 	int j, ret;
++  u_char *datbuf;
+ 
++  datbuf = kmalloc(mtd->writesize + mtd->oobsize, GFP_KERNEL);
++	memset(&ops, 0, sizeof(ops));
+ 	ops.ooblen = mtd->oobsize;
+ 	ops.oobbuf = buf;
+-	ops.ooboffs = 0;
+-	ops.datbuf = NULL;
+-	ops.mode = MTD_OOB_PLACE;
+-	
+-	mtd->flags |= MTD_USE_DEV_OOB_LAYOUT;
++	ops.datbuf = datbuf;
++	ops.len = mtd->writesize;
++	ops.mode = MTD_OOB_RAW;
+ 
+ 	for (j = 0; j < len; j++) {
+ 		/*
+@@ -346,18 +346,25 @@
+ 		 * buswidth
+ 		 */
+ 		ret = mtd->read_oob(mtd, offs, &ops);
+-		if (ret)
++
++		if (ret < 0)
++    {
+ 			return ret;
++    }
+ 
+-		if (check_short_pattern(buf, bd))
++	  if (check_short_pattern(datbuf + mtd->writesize, bd))
++    { 
+ 			return 1;
++    }
+ 
+ 		offs += mtd->writesize;
+ 	}
+ 	
+-	mtd->flags &= ~MTD_USE_DEV_OOB_LAYOUT;
+-
++  if(datbuf) kfree(datbuf); 
++  mtd->flags &= ~MTD_USE_DEV_OOB_LAYOUT;
++  
+ 	return 0;
++
+ }
+ 
+ /**
