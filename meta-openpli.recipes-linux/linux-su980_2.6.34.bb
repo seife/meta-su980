@@ -35,7 +35,6 @@ SRC_URI = " \
 	file://114-apollo_sfc32M.patch \
 	file://115-apollo_sfc_jffs2_fix.patch \
 	file://116-apollo_ip3106_kgdb.patch \
-	file://116-apollo_nand_init.patch \
 	file://117-apollo_sfc_jffs2_32M.patch \
 	file://118-apollo_syscall.patch \
 	file://119-apollo_perf_events.patch \
@@ -60,15 +59,9 @@ SRC_URI = " \
 	file://146-apollo_usb_no_otg_usbcv_fix.patch \
 	file://147-apollo_gmac0_rgmii.patch \
 	file://148-apollo_usb_vid_pid_fix.patch \
-	file://149-apollo_dvb_ext.patch \
-	file://149-apollo_mtdblock_robbs.patch \
-	file://150-apollo_nand_erase.patch \
-	file://151-apollo_nand_page_size.patch \
-	file://152-apollo_sfc_device.patch \
 	file://156-apollo_sdio_pci_support.patch \
 	file://158-apollo_usb_reset_fix.patch \
 	file://sen5_input_repeat.patch \
-	file://sen5_logo.patch \
 	file://sen5_s25fl129p_spi_flash.patch \
 	"
 
