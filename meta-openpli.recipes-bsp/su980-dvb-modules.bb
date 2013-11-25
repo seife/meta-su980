@@ -3,7 +3,7 @@ SECTION = "base"
 PRIORITY = "required"
 LICENSE = "CLOSED"
 
-KV = '2.6.34.2'
+KV = '2.6.34'
 PV = '20130603'
 
 PR = "${GMVERSION}.${GMREVISION}"
