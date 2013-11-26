@@ -12,12 +12,11 @@ S = "${WORKDIR}"
 
 inherit module update-rc.d
 
-SRC_URI = "http://images.hdmedia-universe.com/anderes/${MACHINE}-dvb-modules-${PV}.tar.gz"
+SRC_URI = "file://${MACHINE}-dvb-modules-${PV}.tar.gz"
 
 FILES_${PN} += " \
-	${sysconfdir}/modules-load.d/_${MACHINE}.conf \
-	${base_libdir}/firmware/* \
-	${sysconfdir}/modprobe.d/vpmfbDrv.conf \
+	${base_libdir}/* \
+	${sysconfdir}/* \
 	"
 
 INITSCRIPT_NAME = "populate-private-nodes.sh"
