@@ -15,3 +15,6 @@ do_install() {
 		install -m 0644 ${S}/$f ${D}/${libdir}
 	done
 }
+
+SRC_URI[md5sum] = "eedb4d3da3432f0fa45ee12ecb1eb919"
+SRC_URI[sha256sum] = "3a70dd81f4e6520be7804a08c69bf55b6c202584dcf223f52ebd7dee58204f08"
