@@ -1,0 +1,18 @@
+How to create the two repositories which can then be merged
+with this one to update the openpli-su980 parts:
+
+git clone git@github.com:OpenCube/hypercube-su980.git
+cp hypercube-su980/ flt-bsp -a
+  cd flt-bsp
+  git filter-branch --subdirectory-filter meta-openpli/recipes-bsp/su980/
+  git filter-branch --tree-filter 'mkdir -p .meta-openpli.recipes-bsp; \
+      mv * .meta-openpli.recipes-bsp; mv .meta-openpli.recipes-bsp meta-openpli.recipes-bsp' --prune-empty -f
+  cd ..
+cp hypercube-su980/ flt-linux -a
+cd flt-linux/
+  git filter-branch --subdirectory-filter meta-openpli/recipes-linux/linux
+  git filter-branch --tree-filter 'mkdir -p .meta-openpli.recipes-linux; \
+      mv * .meta-openpli.recipes-linux; mv .meta-openpli.recipes-linux meta-openpli.recipes-linux' --prune-empty -f
+cd ..
+
+Then fetch master from flt-linux and flt-bsp and merge both.
