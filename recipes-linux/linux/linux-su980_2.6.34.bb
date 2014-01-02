@@ -77,11 +77,12 @@ S = "${WORKDIR}/linux-${PV}"
 
 inherit kernel
 
+## TODO: not sure what this is good for...
 export OS = "Linux"
-KERNEL_OBJECT_SUFFIX = "ko"
-KERNEL_OUTPUT = "vmlinux"
-KERNEL_IMAGETYPE = "vmlinux"
-KERNEL_IMAGEDEST = "/tmp"
+# KERNEL_OBJECT_SUFFIX = "ko"
+# KERNEL_OUTPUT = "vmlinux"
+# KERNEL_IMAGETYPE ?= "Image"
+# KERNEL_IMAGEDEST = "/tmp"
 
 FILES_kernel-image = "${KERNEL_IMAGEDEST}/${KERNEL_IMAGETYPE}-${KERNEL_VERSION}*"
 
