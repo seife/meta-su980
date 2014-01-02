@@ -4,6 +4,11 @@ DESCRIPTION = "Linux kernel for ${MACHINE}"
 SECTION = "kernel"
 LICENSE = "GPLv2"
 
+# use gcc-4.5 since the binary modules are also compiled with gcc-4.5
+DEPENDS += "kernelgcc"
+KERNELGCC = "gcc-4.5.4"
+KERNEL_CC = "${CCACHE}${HOST_PREFIX}${KERNELGCC} ${TUNE_CCARGS}"
+
 SRC_URI[linux.md5sum] = "10eebcb0178fb4540e2165bfd7efc7ad"
 SRC_URI[linux.sha256sum] = "fa395fec7de633df1cb85b6248b8f35af98380ed128a8bc465fb48bc4d252633"
 
