@@ -11,6 +11,7 @@ PV = '20131127'
 S = "${WORKDIR}"
 
 inherit module update-rc.d
+KERNEL_MODULES_META_PACKAGE = "None"
 
 SRC_URI = "file://${MACHINE}-dvb-modules-${PV}.tar.gz"
 
