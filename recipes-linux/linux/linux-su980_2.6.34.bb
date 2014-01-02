@@ -93,9 +93,3 @@ do_configure_prepend() {
 kernel_do_install_append() {
 	cp include/generated/bounds.h $kerneldir/include/generated/bounds.h
 }
-
-do_compile() {
-    export use_alternate_initrd="V=1"
-    kernel_do_compile
-}
-
