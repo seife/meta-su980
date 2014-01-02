@@ -6,7 +6,9 @@ require gcc-cross4.inc
 
 EXTRA_OECONF += "--disable-libunwind-exceptions \
                  --with-mpfr=${STAGING_DIR_NATIVE}${prefix_native} \
-                 --with-system-zlib "
+                 --with-system-zlib \
+                 --with-as=${STAGING_BINDIR_TOOLCHAIN}/${TARGET_SYS}-as \
+"
 
 ARCH_FLAGS_FOR_TARGET += "-isystem${STAGING_DIR_TARGET}${target_includedir}"
 
