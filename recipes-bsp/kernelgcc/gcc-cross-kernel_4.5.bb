@@ -1,5 +1,8 @@
 # kernel only needs C, no C++, FORTRAN, ...
 LANGUAGES = "c"
+# build fails with too new texinfo >= 5.0
+# we don't want the documentation anyway, so just skip building it.
+CACHED_CONFIGUREVARS += "MAKEINFO=missing"
 
 require gcc-${PV}.inc
 require gcc-cross4.inc
