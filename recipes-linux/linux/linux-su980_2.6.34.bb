@@ -61,13 +61,16 @@ SRC_URI = " \
 	file://137-apollo_chip_rev_detect.patch \
 	file://139-apollo_usb_gadget_fshs.patch \
 	file://141-apollo_usb_gadget_flag_cleanup.patch \
+	file://144-nand_pagesize.patch \
 	file://145-apollo_usb_gadget_plugfest_fixes.patch \
 	file://146-apollo_usb_no_otg_usbcv_fix.patch \
 	file://147-apollo_gmac0_rgmii.patch \
 	file://148-apollo_usb_vid_pid_fix.patch \
 	file://156-apollo_sdio_pci_support.patch \
+	file://157-apollo_linux_dvb_extension.patch \
 	file://158-apollo_usb_reset_fix.patch \
 	file://sen5_input_repeat.patch \
+	file://sen5_fix_network_tx_crash.patch \
 	file://sen5_s25fl129p_spi_flash.patch \
 	file://0001-ARM-6329-1-wire-up-sys_accept4-on-ARM.patch \
 "
