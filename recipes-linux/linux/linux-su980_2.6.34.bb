@@ -1,4 +1,4 @@
-FILESEXTRAPATHS_append := ":${THISDIR}/files:${THISDIR}/../../meta-openpli.recipes-linux/${PN}-${PV}/"
+FILESEXTRAPATHS_append := ":${THISDIR}/files:${THISDIR}/../../meta-openpli.recipes-linux/${PN}-${PV}:${THISDIR}/../../meta-openpli.recipes-bsp"
 
 DESCRIPTION = "Linux kernel for ${MACHINE}"
 SECTION = "kernel"
@@ -73,6 +73,9 @@ SRC_URI = " \
 	file://sen5_fix_network_tx_crash.patch \
 	file://sen5_s25fl129p_spi_flash.patch \
 	file://0001-ARM-6329-1-wire-up-sys_accept4-on-ARM.patch \
+	file://boot.bin \
+	file://loader.bin \
+	file://upgrade.scr \
 "
 
 S = "${WORKDIR}/linux-${PV}"
@@ -96,6 +99,6 @@ do_configure_prepend() {
         oe_runmake oldconfig
 }
 
-kernel_do_install_append() {
-	cp include/generated/bounds.h $kerneldir/include/generated/bounds.h
+kernel_do_deploy_append() {
+	cp -a ${WORKDIR}/boot.bin ${WORKDIR}/loader.bin ${WORKDIR}/upgrade.scr ${DEPLOYDIR}/
 }
