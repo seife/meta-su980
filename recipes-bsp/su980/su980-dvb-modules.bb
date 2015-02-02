@@ -1,4 +1,4 @@
-FILESEXTRAPATHS_prepend := "${THISDIR}/../../meta-openpli.recipes-bsp/"
+FILESEXTRAPATHS_prepend := "${THISDIR}/../../meta-openpli.recipes-bsp:"
 
 DESCRIPTION = "Hardware drivers for ${MACHINE}"
 SECTION = "base"

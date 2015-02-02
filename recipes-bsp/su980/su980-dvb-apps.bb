@@ -1,4 +1,4 @@
-FILESEXTRAPATHS_prepend := "${THISDIR}/../../meta-openpli.recipes-bsp/"
+FILESEXTRAPATHS_prepend := "${THISDIR}/../../meta-openpli.recipes-bsp:"
 
 HOMEPAGE = "http://www.linuxtv.org"
 require conf/license/license-gplv2.inc

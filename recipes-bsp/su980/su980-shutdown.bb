@@ -1,4 +1,4 @@
-FILESEXTRAPATHS_prepend := "${THISDIR}/../../meta-openpli.recipes-bsp/su980-shutdown"
+FILESEXTRAPATHS_prepend := "${THISDIR}/../../meta-openpli.recipes-bsp/su980-shutdown:"
 
 require conf/license/license-gplv2.inc
 
