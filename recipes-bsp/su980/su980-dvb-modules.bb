@@ -13,7 +13,10 @@ S = "${WORKDIR}"
 inherit module update-rc.d
 KERNEL_MODULES_META_PACKAGE = "None"
 
-SRC_URI = "file://${MACHINE}-dvb-modules-${PV}.tar.gz"
+SRC_URI = " \
+	file://${MACHINE}-dvb-modules-${PV}.tar.gz \
+	file://su980-dvb-modules-beautify-initscript.patch \
+"
 
 FILES_${PN} += " \
 	${base_libdir}/* \
@@ -39,8 +42,18 @@ do_install() {
 	install -m 644 ${WORKDIR}/RT2870STA.dat ${D}/${sysconfdir}/Wireless/RT2870STA
 
 	install -d ${D}/${sysconfdir}/modules-load.d
-	for i in `ls | grep \\.ko | sed -e 's/.ko//g'`; do
-		echo $i >> ${D}/${sysconfdir}/modules-load.d/_${MACHINE}.conf
+	# most other modules depend on the lnx* drivers so sort them first
+	for i in `ls *.ko | sed -e 's/.ko//g'`; do
+		case $i in
+			lnx*)	echo $i >> ${D}/${sysconfdir}/modules-load.d/_${MACHINE}.conf ;;
+			*) ;;
+		esac
+	done
+	for i in `ls *.ko | sed -e 's/.ko//g'`; do
+		case $i in
+			lnx*) ;;
+			*)	echo $i >> ${D}/${sysconfdir}/modules-load.d/_${MACHINE}.conf ;;
+		esac
 	done
 
 	install -d ${D}/${sysconfdir}/init.d

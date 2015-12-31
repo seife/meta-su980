@@ -1,0 +1,52 @@
+diff --git a/populate-private-nodes.sh b/populate-private-nodes.sh
+old mode 100755
+new mode 100644
+index fec70f1..b24c8b6
+--- a/populate-private-nodes.sh
++++ b/populate-private-nodes.sh
+@@ -16,6 +16,20 @@ create_node()
+ 
+ }
+ 
++mknod()
++{
++  device=$1
++  what=$2
++  major=$3
++  minor=$4
++  MAJOR=-1
++  MINOR=-1
++  eval `stat -c 'MAJOR=$((0x%t)) MINOR=$((0x%T))' $device 2>/dev/null`
++  if [ x$MAJOR = x-1 -o $MAJOR != $major -o $MINOR != $minor ]; then
++    /bin/mknod $device $what $major $minor
++  fi
++}
++
+ echo "Running mknod now ......."
+ 
+ create_node "KAL"
+@@ -39,9 +53,9 @@ mknod fe_sat1 c 212 1
+ #mknod fe_cable c 212 1
+ mknod fe_ter0 c 212 2
+ #mknod fe_atsc c 212 3
+-ln -s fe_sat0 frontend0
+-ln -s fe_sat1 frontend1
+-ln -s fe_ter0 frontend2
++test -e frontend0 || ln -s fe_sat0 frontend0
++test -e frontend1 || ln -s fe_sat1 frontend1
++test -e frontend2 || ln -s fe_ter0 frontend2
+ #ln -s fe_sat fe_sat0
+ 
+ mknod demux0 c 212 16
+@@ -65,8 +79,9 @@ mknod audio1 c 212 65
+ mknod ca0 c 212 80
+ mknod ca1 c 212 81
+ mknod ca2 c 212 82
+-mknod ca3 c 212 83
+-mknod ca4 c 212 84
++# ca3 and ca4 crash the driver...
++# mknod ca3 c 212 83
++# mknod ca4 c 212 84
+ 
+ #/root/iframe
+ 
