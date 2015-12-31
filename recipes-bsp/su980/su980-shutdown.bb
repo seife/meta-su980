@@ -20,3 +20,34 @@ do_install() {
 
 INSANE_SKIP_${PN} = "ldflags"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
+
+pkg_prerm_${PN}() {
+#!/bin/sh
+# do not call su980-shutdown on package operations,
+# because it turns off power...
+exit 0
+}
+
+pkg_preinst_${PN}() {
+#!/bin/sh
+if test "x$D" != "x"; then
+	OPT="-r $D"
+fi
+if type update-rc.d >/dev/null 2>/dev/null; then
+	update-rc.d -f $OPT ${INITSCRIPT_NAME} remove
+fi
+exit
+## original will call "su980-shutdown stop" which is bad...
+}
+
+pkg_postinst_${PN}() {
+#!/bin/sh
+if test "x$D" != "x"; then
+	OPT="-r $D"
+fi
+if type update-rc.d >/dev/null 2>/dev/null; then
+	update-rc.d $OPT ${INITSCRIPT_NAME} start 89 0 .
+fi
+exit
+## normally, $OPT contains "-s" which is deadly...
+}
