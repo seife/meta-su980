@@ -78,12 +78,12 @@ SRC_URI = " \
 	file://upgrade.scr \
 "
 
-S = "${WORKDIR}/linux-${PV}"
-
 inherit kernel
 
 ## this needs to come after "inherit kernel" or it will be overwritten from there...
 KERNEL_CC = "${CCACHE}${HOST_PREFIX}${KERNELGCC} ${TUNE_CCARGS}"
+S = "${WORKDIR}/linux-${PV}"
+B = "${S}"
 
 ## TODO: not sure what this is good for...
 export OS = "Linux"
