@@ -73,6 +73,7 @@ SRC_URI = " \
 	file://sen5_fix_network_tx_crash.patch \
 	file://sen5_s25fl129p_spi_flash.patch \
 	file://0001-ARM-6329-1-wire-up-sys_accept4-on-ARM.patch \
+	file://linux-timeconst-new-perl.patch \
 	file://boot.bin \
 	file://loader.bin \
 	file://upgrade.scr \
